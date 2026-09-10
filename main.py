@@ -1,20 +1,38 @@
 import os
+import uuid
 from dotenv import load_dotenv
 
-load_dotenv()
+from _decimal import Decimal
 
-from t_tech.invest.grpc import Client
 from t_tech.invest.grpc.common import MoneyValue, Quotation
 from t_tech.invest.grpc.sandbox import SandboxPayInRequest
 from t_tech.invest.grpc.operations import PortfolioRequest
+from t_tech.invest.constants import INVEST_GRPC_API_SANDBOX
 from t_tech.invest.grpc.orders import PostOrderRequest, OrderDirection, OrderType
+from t_tech.invest.grpc import Client, InstrumentStatus
 
+from t_tech.invest.grpc.schemas import (
+    PostStopOrderRequest,
+    PostStopOrderResponse,
+    Quotation,
+    StopOrderDirection,
+    StopOrderExpirationType,
+    StopOrderType,
+    TrailingValueType,
+    GetOrderPriceRequest,
+    GetOrderPriceResponse,
+    OrderDirection,
+    GetLastPricesRequest
+)
+from t_tech.invest.utils import decimal_to_quotation
+
+load_dotenv()
 
 class InvestClient:
     def __init__(self, token):
         self.token = token
 
-        with Client(token) as client:
+        with Client(token, target=INVEST_GRPC_API_SANDBOX) as client:
             accounts = client.sandbox.get_sandbox_accounts()
 
             if accounts.accounts:
@@ -23,26 +41,69 @@ class InvestClient:
                 result = self.client.sandbox.open_sandbox_account()
                 self.account_id = result.account_id
 
-            self.trade(client)
+            print(f"SANDBOX ACCOUNT ID: {self.account_id}")
 
-        '''# Пополняем счёт
-        amount = MoneyValue(units=10000, nano=0, currency="rub")
-        request = SandboxPayInRequest(account_id=self.account_id, amount=amount)
-        pay_result = self.client.sandbox.sandbox_pay_in(request)
-        print(f"Пополнение: 10000 RUB")
-        print(f"Баланс после пополнения: {pay_result.balance}")
+            portfolio = client.operations.get_portfolio(PortfolioRequest(account_id=self.account_id,))
+            currencies = portfolio.total_amount_currencies
+            if not isinstance(currencies, (list, tuple)):
+                currencies = [currencies]
+            for money in currencies:
+                amount = money.units + money.nano / 1e9
+                print(f"Баланс: {amount:.2f} {money.currency}")
 
-        # Проверяем портфель
-        portfolio = self.client.sandbox.get_sandbox_portfolio(PortfolioRequest(account_id=self.account_id))
-        print(f"Портфель:")
-        print(f"  Акции: {portfolio.total_amount_shares}")
-        print(f"  Облигации: {portfolio.total_amount_bonds}")
-        print(f"  ETF: {portfolio.total_amount_etf}")
-        print(f"  Валюта: {portfolio.total_amount_currencies}")
-        print(f"  Итого: {portfolio.total_amount_portfolio}")
-        print(f"  Ожидаемая доходность: {portfolio.expected_yield}")
-        print(f"  Ежедневная доходность: {portfolio.daily_yield}")'''
+            response = client.market_data.get_last_prices(GetLastPricesRequest(
+                figi=["BBG004730ZJ9"], 
+                instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE,)
+            )
+            
+            price_info = response.last_prices[0]
+            price = price_info.price
+            price_value = price.units + price.nano / 1e9
+            print(f"Цена бумаги : {price_value}")
 
+            '''response = self.post_stop_order(
+                    client,
+                    self.account_id,
+                    "BBG004730ZJ9",
+                    stop_order_direction=StopOrderDirection.STOP_ORDER_DIRECTION_BUY,
+                    quantity=1,
+                    price=Quotation(units=10, nano=0),
+                )
+            print(response)'''
+
+    def get_order_price(
+        sandbox_service, account_id, instrument_id, price
+    ) -> GetOrderPriceResponse:
+        return sandbox_service.sandbox.get_sandbox_order_price(
+            request=GetOrderPriceRequest(
+                account_id=account_id,
+                instrument_id=instrument_id,
+                direction=OrderDirection.ORDER_DIRECTION_BUY,
+                quantity=1,
+                price=utils.decimal_to_quotation(Decimal(price)),  # type: ignore[arg-type]
+            )
+        )
+
+    def post_stop_order(
+            sandbox_service, account_id, instrument_id, stop_order_direction, quantity, price
+        ) -> PostStopOrderResponse:
+            return sandbox_service.sandbox.post_sandbox_stop_order(
+                request=PostStopOrderRequest(
+                    account_id=account_id,
+                    instrument_id=instrument_id,
+                    direction=stop_order_direction,
+                    quantity=quantity,
+                    price=price,
+                    order_id=str(uuid.uuid4()),
+                    expiration_type=StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
+                    stop_price=price,
+                    stop_order_type=StopOrderType.STOP_ORDER_TYPE_TAKE_PROFIT,
+                    trailing_data=PostStopOrderRequest.TrailingData(
+                        indent_type=TrailingValueType.TRAILING_VALUE_RELATIVE,
+                        indent=decimal_to_quotation(Decimal(1)),  # type: ignore[arg-type]
+                    ),
+                )
+            )
 
     def trade(self,client):
         """Покупаем дешевле, продаём подороже"""
@@ -116,15 +177,17 @@ class InvestClient:
         profit = (sell_price_value - buy_price_value) * quantity
         print(f"\nОжидаемый профит: {profit:.2f} RUB")
 
+    def pay_in(self,client,amount):
+        value = MoneyValue(units=amount, nano=0, currency="rub")
+        request = SandboxPayInRequest(account_id=self.account_id, amount=amount)
+        pay_result = self.client.sandbox.sandbox_pay_in(request)
+
+        print(f"Баланс += {amount}: {pay_result.balance}")
 
 def main():
     token = os.getenv("INVEST_TOKEN")
 
     InvestClient(token)
 
-
 if __name__ == "__main__":
-    main()
-
-
     main()
