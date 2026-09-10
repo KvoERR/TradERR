@@ -12,40 +12,39 @@ from t_tech.invest.grpc.orders import PostOrderRequest, OrderDirection, OrderTyp
 
 class InvestClient:
     def __init__(self, token):
+        self.token = token
+
         with Client(token) as client:
             accounts = client.sandbox.get_sandbox_accounts()
-            print(f"Счета: {accounts.accounts}")
 
             if accounts.accounts:
-                account_id = accounts.accounts[0].id
-                print(f"Используем счёт: {account_id}")
+                self.account_id = accounts.accounts[0].id
             else:
-                result = client.sandbox.open_sandbox_account()
-                account_id = result.account_id
-                print(f"Счёт открыт: {account_id}")
+                result = self.client.sandbox.open_sandbox_account()
+                self.account_id = result.account_id
 
-            # Пополняем счёт
-            amount = MoneyValue(units=10000, nano=0, currency="rub")
-            request = SandboxPayInRequest(account_id=account_id, amount=amount)
-            pay_result = client.sandbox.sandbox_pay_in(request)
-            print(f"Пополнение: 10000 RUB")
-            print(f"Баланс после пополнения: {pay_result.balance}")
+            self.trade(client)
 
-            # Проверяем портфель
-            portfolio = client.sandbox.get_sandbox_portfolio(PortfolioRequest(account_id=account_id))
-            print(f"Портфель:")
-            print(f"  Акции: {portfolio.total_amount_shares}")
-            print(f"  Облигации: {portfolio.total_amount_bonds}")
-            print(f"  ETF: {portfolio.total_amount_etf}")
-            print(f"  Валюта: {portfolio.total_amount_currencies}")
-            print(f"  Итого: {portfolio.total_amount_portfolio}")
-            print(f"  Ожидаемая доходность: {portfolio.expected_yield}")
-            print(f"  Ежедневная доходность: {portfolio.daily_yield}")
+        '''# Пополняем счёт
+        amount = MoneyValue(units=10000, nano=0, currency="rub")
+        request = SandboxPayInRequest(account_id=self.account_id, amount=amount)
+        pay_result = self.client.sandbox.sandbox_pay_in(request)
+        print(f"Пополнение: 10000 RUB")
+        print(f"Баланс после пополнения: {pay_result.balance}")
 
-            # Торгую
-            self.trade(client, account_id)
+        # Проверяем портфель
+        portfolio = self.client.sandbox.get_sandbox_portfolio(PortfolioRequest(account_id=self.account_id))
+        print(f"Портфель:")
+        print(f"  Акции: {portfolio.total_amount_shares}")
+        print(f"  Облигации: {portfolio.total_amount_bonds}")
+        print(f"  ETF: {portfolio.total_amount_etf}")
+        print(f"  Валюта: {portfolio.total_amount_currencies}")
+        print(f"  Итого: {portfolio.total_amount_portfolio}")
+        print(f"  Ожидаемая доходность: {portfolio.expected_yield}")
+        print(f"  Ежедневная доходность: {portfolio.daily_yield}")'''
 
-    def trade(self, client, account_id):
+
+    def trade(self,client):
         """Покупаем дешевле, продаём подороже"""
         figi = "BBG0047303N7"  # SBER
         quantity = 10
@@ -85,7 +84,7 @@ class InvestClient:
             quantity=quantity,
             price=buy_price,
             direction=OrderDirection.ORDER_DIRECTION_BUY,
-            account_id=account_id,
+            account_id=self.account_id,
             order_type=OrderType.ORDER_TYPE_LIMIT,
             order_id="buy_order_001"
         )
@@ -102,7 +101,7 @@ class InvestClient:
             quantity=quantity,
             price=sell_price,
             direction=OrderDirection.ORDER_DIRECTION_SELL,
-            account_id=account_id,
+            account_id=self.account_id,
             order_type=OrderType.ORDER_TYPE_LIMIT,
             order_id="sell_order_001"
         )
@@ -125,4 +124,7 @@ def main():
 
 
 if __name__ == "__main__":
+    main()
+
+
     main()
